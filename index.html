@@ -106,6 +106,7 @@ input.cell-num{width:56px;text-align:center;}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px);}
 .modal-overlay.open{display:flex;}
 .modal{background:#fff;border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,.2);width:100%;max-width:460px;overflow:hidden;}
+.modal.modal-lg{max-width:600px;}
 .modal-header{background:linear-gradient(135deg,#1B4F9B 0%,#1e40af 100%);padding:20px 22px 16px;}
 .modal-header-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
 .modal-app-name{font-size:15px;font-weight:700;color:#fff;}
@@ -150,7 +151,7 @@ input.cell-num{width:56px;text-align:center;}
       <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
     </div>
     <div class="header-titles">
-      <h1>Painel de Alocação <span style="font-size:10px;font-weight:400;opacity:.6">· build 08-07-2026_10:48</span></h1>
+      <h1>Painel de Alocação <span style="font-size:10px;font-weight:400;opacity:.6">· build 08-07-2026_12:41</span></h1>
       <p>Gerência de Educação Especial — GEE / SEDUCT</p>
     </div>
     <button class="btn-sobre" onclick="abrirSobre()">
@@ -217,6 +218,7 @@ input.cell-num{width:56px;text-align:center;}
             <th style="width:70px">Meta Cui.</th>
             <th style="width:70px">Atual Cui.</th>
             <th style="width:96px">Status Cui.</th>
+            <th style="width:98px">Alunos NEE</th>
             <th class="col-acoes"></th>
           </tr>
         </thead>
@@ -337,11 +339,46 @@ input.cell-num{width:56px;text-align:center;}
   </div>
 </div>
 
+<div class="modal-overlay" id="modalDeficiencias" onclick="fecharDeficiencias(event)">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-header-top">
+        <div><div class="modal-app-name">Alunos por deficiência</div><div class="modal-version" id="defEscolaNome" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div></div>
+        <button class="modal-close" onclick="fecharDeficiencias()">x</button>
+      </div>
+      <div class="modal-org">Quantidade de alunos NEE por tipo de deficiência nesta escola</div>
+    </div>
+    <div class="modal-body">
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo de deficiência</th>
+              <th style="width:80px">Alunos</th>
+              <th class="col-acoes"></th>
+            </tr>
+          </thead>
+          <tbody id="corpoDeficiencias"></tbody>
+        </table>
+      </div>
+      <div class="toolbar" style="margin-top:12px;justify-content:space-between">
+        <button class="btn btn-primary btn-sm" onclick="adicionarTipoDeficiencia()">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Adicionar tipo
+        </button>
+        <div style="font-size:12.5px;color:var(--text-muted)">Total: <strong id="defTotalAlunos" style="color:var(--text)">0</strong> aluno(s)</div>
+      </div>
+    </div>
+    <div class="modal-footer">Os tipos digitados aqui entram como sugestão nas próximas escolas.</div>
+  </div>
+</div>
+
 <div id="toastEl" class="toast"></div>
 
 <script>
 var STORAGE_KEY = 'gee_painel_alocacao_v1';
 var STORAGE_KEY_ESCOLAS = 'gee_painel_alocacao_escolas_conhecidas_v1';
+var STORAGE_KEY_TIPOS_DEF = 'gee_painel_alocacao_tipos_deficiencia_v1';
 // Remove acentos e caixa para comparar nomes de escola sem duplicar
 // quando a mesma escola está grafada com/sem acento (ex.: "Venancio" x "Venâncio").
 function normalizarNome(s) {
@@ -355,6 +392,26 @@ var seq = 1;
 var metaTotalMed = 425;
 var metaTotalCui = 258;
 var sugestoesRealocacao = [];
+var tiposDeficienciaConhecidos = [];
+var escolaDeficienciasAbertaId = null;
+
+// Lista de partida para o autocomplete de "tipo de deficiência" no cadastro
+// por escola. É só sugestão inicial: qualquer tipo digitado pela primeira vez
+// entra automaticamente na lista de sugestões (mesma lógica das escolas).
+var TIPOS_DEFICIENCIA_PADRAO = [
+  'Altas Habilidades/Superdotação',
+  'Baixa Visão',
+  'Deficiência Física',
+  'Deficiência Intelectual',
+  'Deficiência Múltipla',
+  'Deficiente Auditivo',
+  'Deficiente Visual',
+  'Surdez',
+  'Surdocegueira',
+  'Síndrome de Down',
+  'TDAH',
+  'Transtorno do Espectro Autista (TEA)'
+];
 
 // Lista de escolas conhecidas (aparece na lista suspensa do campo "Escola").
 // Pode ser editada à vontade aqui embaixo, e também é atualizada automaticamente
@@ -614,6 +671,17 @@ function carregar() {
   escolasConhecidas = Object.keys(mapaEscolas).map(function(k) { return mapaEscolas[k]; });
   escolasConhecidas.sort(function(a,b){ return a.localeCompare(b, 'pt-BR'); });
   try { localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(escolasConhecidas)); } catch(e) {}
+
+  try {
+    var rawTipos = localStorage.getItem(STORAGE_KEY_TIPOS_DEF);
+    tiposDeficienciaConhecidos = rawTipos ? JSON.parse(rawTipos) : [];
+  } catch(e) { tiposDeficienciaConhecidos = []; }
+  var mapaTipos = {};
+  tiposDeficienciaConhecidos.forEach(function(n) { mapaTipos[normalizarNome(n)] = n; });
+  TIPOS_DEFICIENCIA_PADRAO.forEach(function(n) { mapaTipos[normalizarNome(n)] = n; });
+  tiposDeficienciaConhecidos = Object.keys(mapaTipos).map(function(k) { return mapaTipos[k]; });
+  tiposDeficienciaConhecidos.sort(function(a,b){ return a.localeCompare(b, 'pt-BR'); });
+  try { localStorage.setItem(STORAGE_KEY_TIPOS_DEF, JSON.stringify(tiposDeficienciaConhecidos)); } catch(e) {}
 }
 
 function salvar() {
@@ -622,7 +690,7 @@ function salvar() {
   } catch(e) { toast('Não foi possível salvar localmente.'); }
 }
 
-function ligarAutocompleteEscola(inputEl, listEl, onEscolher) {
+function ligarAutocomplete(inputEl, listEl, obterLista, onEscolher) {
   var wrap = inputEl.closest('.autocomplete-wrap');
   var arrowEl = wrap ? wrap.querySelector('.autocomplete-arrow') : null;
 
@@ -640,9 +708,10 @@ function ligarAutocompleteEscola(inputEl, listEl, onEscolher) {
 
   function filtrar() {
     var termo = inputEl.value.trim().toLowerCase();
+    var lista = obterLista();
     var candidatos = termo
-      ? escolasConhecidas.filter(function(n) { return n.toLowerCase().indexOf(termo) !== -1; })
-      : escolasConhecidas.slice();
+      ? lista.filter(function(n) { return n.toLowerCase().indexOf(termo) !== -1; })
+      : lista.slice();
     // Antes limitava a 40 itens, mas como a lista tem ~80 CE/CEM antes da
     // primeira EM (ordem alfabética), isso fazia as EM nunca aparecerem sem
     // digitar nada pra filtrar. Como o total de escolas é pequeno (pouco
@@ -732,6 +801,16 @@ function registrarEscolaConhecida(nome) {
   try { localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(escolasConhecidas)); } catch(e) {}
 }
 
+function registrarTipoDeficienciaConhecido(nome) {
+  nome = String(nome || '').trim();
+  if (!nome || nome.length < 2) return;
+  var jaExiste = tiposDeficienciaConhecidos.some(function(n) { return normalizarNome(n) === normalizarNome(nome); });
+  if (jaExiste) return;
+  tiposDeficienciaConhecidos.push(nome);
+  tiposDeficienciaConhecidos.sort(function(a,b){ return a.localeCompare(b, 'pt-BR'); });
+  try { localStorage.setItem(STORAGE_KEY_TIPOS_DEF, JSON.stringify(tiposDeficienciaConhecidos)); } catch(e) {}
+}
+
 function importarEscolasConhecidas() {
   var box = document.getElementById('colarEscolas');
   var linhas = box.value.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
@@ -778,6 +857,10 @@ function statusCui(e) {
   return 'ok';
 }
 
+function totalDeficiencias(e) {
+  return (e.deficiencias || []).reduce(function(soma, d) { return soma + (parseInt(d.quantidade, 10) || 0); }, 0);
+}
+
 function badgeHTML(status, faltamQtd) {
   if (status === 'zero') return '<span class="badge badge-zero">—</span>';
   if (status === 'ok') return '<span class="badge badge-ok">OK</span>';
@@ -792,7 +875,8 @@ function adicionarEscola() {
     nome: '',
     regiao: '',
     metaMed: '', atualMed: 0,
-    metaCui: '', atualCui: 0
+    metaCui: '', atualCui: 0,
+    deficiencias: []
   });
   salvar();
   render();
@@ -868,6 +952,7 @@ function render() {
       '<td><input class="cell-input cell-num" data-campo="metaCui" type="number" min="0" value="' + e.metaCui + '"></td>' +
       '<td><input class="cell-input cell-num" data-campo="atualCui" type="number" min="0" value="' + e.atualCui + '"></td>' +
       '<td>' + badgeHTML(sC, faltamCui) + '</td>' +
+      '<td><button class="btn btn-ghost btn-sm" style="padding:5px 9px" title="Ver/editar alunos por deficiência" onclick="abrirDeficiencias(' + e.id + ')">' + totalDeficiencias(e) + (totalDeficiencias(e) ? ' aluno(s)' : ' —') + '</button></td>' +
       '<td class="col-acoes"><button class="btn-icon-sm" title="Remover" onclick="removerEscola(' + e.id + ')"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td>';
 
     tr.querySelectorAll('[data-campo]').forEach(function(input) {
@@ -893,7 +978,7 @@ function render() {
 
     var nomeInput = tr.querySelector('input[data-campo="nome"]');
     var nomeList = tr.querySelector('.autocomplete-list');
-    ligarAutocompleteEscola(nomeInput, nomeList, function(valorEscolhido) {
+    ligarAutocomplete(nomeInput, nomeList, function() { return escolasConhecidas; }, function(valorEscolhido) {
       atualizarCampo(e.id, 'nome', valorEscolhido);
       registrarEscolaConhecida(valorEscolhido);
     });
@@ -910,7 +995,7 @@ function escAttr(s) {
 
 function renderStats() {
   var totalEscolas = escolas.length;
-  var faltaMed = 0, faltaCui = 0, excessoCount = 0, totalMedAtual = 0, totalCuiAtual = 0;
+  var faltaMed = 0, faltaCui = 0, excessoCount = 0, totalMedAtual = 0, totalCuiAtual = 0, totalAlunosNEE = 0;
   escolas.forEach(function(e) {
     var sM = statusMed(e), sC = statusCui(e);
     if (sM === 'falta') faltaMed += (e.metaMed - e.atualMed);
@@ -918,6 +1003,7 @@ function renderStats() {
     if (sM === 'excesso' || sC === 'excesso') excessoCount++;
     totalMedAtual += (e.atualMed || 0);
     totalCuiAtual += (e.atualCui || 0);
+    totalAlunosNEE += totalDeficiencias(e);
   });
 
   var grid = document.getElementById('statsGrid');
@@ -926,6 +1012,7 @@ function renderStats() {
     '<div class="stat danger"><div class="stat-label">Vagas em aberto · Mediadores</div><div class="stat-value">' + faltaMed + '</div></div>' +
     '<div class="stat danger"><div class="stat-label">Vagas em aberto · Cuidadores</div><div class="stat-value">' + faltaCui + '</div></div>' +
     '<div class="stat warn"><div class="stat-label">Escolas com excesso</div><div class="stat-value">' + excessoCount + '</div></div>' +
+    '<div class="stat"><div class="stat-label">Alunos NEE cadastrados</div><div class="stat-value">' + totalAlunosNEE + '</div></div>' +
     '<div class="stat success"><div class="stat-label">Mediadores alocados</div><div class="stat-value">' + totalMedAtual + ' <span style="font-size:13px;color:var(--text-hint);font-weight:600;">/ ' + metaTotalMed + '</span><button class="btn-icon-sm meta-edit" title="Editar total contratado de mediadores" onclick="editarMetaTotal(\'med\')"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button></div></div>' +
     '<div class="stat success"><div class="stat-label">Cuidadores alocados</div><div class="stat-value">' + totalCuiAtual + ' <span style="font-size:13px;color:var(--text-hint);font-weight:600;">/ ' + metaTotalCui + '</span><button class="btn-icon-sm meta-edit" title="Editar total contratado de cuidadores" onclick="editarMetaTotal(\'cui\')"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button></div></div>';
 }
@@ -1118,7 +1205,105 @@ function fecharSobre(e) {
   if (e && e.target !== document.getElementById('modalSobre')) return;
   document.getElementById('modalSobre').className = 'modal-overlay'; document.body.style.overflow='';
 }
-document.addEventListener('keydown', function(e){ if(e.key==='Escape') fecharSobre(); });
+
+// ---- Alunos por tipo de deficiência (por escola) ----
+// Guardado em e.deficiencias = [{tipo: 'Síndrome de Down', quantidade: 3}, ...].
+// Não usamos colunas fixas porque os tipos variam muito de escola pra escola;
+// um modal com lista livre (tipo + quantidade) cobre qualquer combinação sem
+// deixar a tabela principal cheia de colunas vazias.
+function abrirDeficiencias(id) {
+  escolaDeficienciasAbertaId = id;
+  renderDeficienciasModal();
+  document.getElementById('modalDeficiencias').className = 'modal-overlay open';
+  document.body.style.overflow = 'hidden';
+}
+
+function fecharDeficiencias(e) {
+  if (e && e.target !== document.getElementById('modalDeficiencias')) return;
+  document.getElementById('modalDeficiencias').className = 'modal-overlay';
+  document.body.style.overflow = '';
+  escolaDeficienciasAbertaId = null;
+  render();
+}
+
+function renderDeficienciasModal() {
+  var esc = escolas.find(function(x) { return x.id === escolaDeficienciasAbertaId; });
+  if (!esc) return;
+  document.getElementById('defEscolaNome').textContent = esc.nome || '(escola sem nome)';
+  esc.deficiencias = esc.deficiencias || [];
+
+  var corpo = document.getElementById('corpoDeficiencias');
+  if (!esc.deficiencias.length) {
+    corpo.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-hint);padding:16px 8px">Nenhum tipo cadastrado ainda.</td></tr>';
+  } else {
+    corpo.innerHTML = esc.deficiencias.map(function(d, idx) {
+      return '<tr>' +
+        '<td><div class="autocomplete-wrap"><input class="cell-input" data-idx="' + idx + '" data-campo="tipo" type="text" autocomplete="off" value="' + escAttr(d.tipo) + '" placeholder="Ex.: Síndrome de Down"><svg class="autocomplete-arrow" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg><div class="autocomplete-list"></div></div></td>' +
+        '<td><input class="cell-input cell-num" data-idx="' + idx + '" data-campo="quantidade" type="number" min="0" value="' + d.quantidade + '"></td>' +
+        '<td class="col-acoes"><button class="btn-icon-sm" title="Remover" onclick="removerTipoDeficiencia(' + idx + ')"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  document.getElementById('defTotalAlunos').textContent = totalDeficiencias(esc);
+
+  corpo.querySelectorAll('[data-campo]').forEach(function(input) {
+    input.addEventListener('input', function() {
+      atualizarTipoDeficiencia(parseInt(input.dataset.idx, 10), input.dataset.campo, input.value);
+    });
+    input.addEventListener('blur', function() {
+      if (input.dataset.campo === 'tipo') registrarTipoDeficienciaConhecido(input.value);
+    });
+  });
+
+  corpo.querySelectorAll('input[data-campo="tipo"]').forEach(function(input) {
+    var wrap = input.closest('.autocomplete-wrap');
+    var listEl = wrap.querySelector('.autocomplete-list');
+    var idx = parseInt(input.dataset.idx, 10);
+    ligarAutocomplete(input, listEl, function() { return tiposDeficienciaConhecidos; }, function(valorEscolhido) {
+      atualizarTipoDeficiencia(idx, 'tipo', valorEscolhido);
+      registrarTipoDeficienciaConhecido(valorEscolhido);
+      input.value = valorEscolhido;
+    });
+  });
+}
+
+function adicionarTipoDeficiencia() {
+  var esc = escolas.find(function(x) { return x.id === escolaDeficienciasAbertaId; });
+  if (!esc) return;
+  esc.deficiencias = esc.deficiencias || [];
+  esc.deficiencias.push({ tipo: '', quantidade: 1 });
+  salvar();
+  renderDeficienciasModal();
+  var inputs = document.querySelectorAll('#corpoDeficiencias input[data-campo="tipo"]');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+function atualizarTipoDeficiencia(idx, campo, valor) {
+  var esc = escolas.find(function(x) { return x.id === escolaDeficienciasAbertaId; });
+  if (!esc || !esc.deficiencias || !esc.deficiencias[idx]) return;
+  if (campo === 'tipo') {
+    esc.deficiencias[idx].tipo = valor;
+  } else {
+    esc.deficiencias[idx].quantidade = valor === '' ? 0 : Math.max(0, parseInt(valor, 10) || 0);
+  }
+  salvar();
+  document.getElementById('defTotalAlunos').textContent = totalDeficiencias(esc);
+}
+
+function removerTipoDeficiencia(idx) {
+  var esc = escolas.find(function(x) { return x.id === escolaDeficienciasAbertaId; });
+  if (!esc || !esc.deficiencias) return;
+  esc.deficiencias.splice(idx, 1);
+  salvar();
+  renderDeficienciasModal();
+}
+
+document.addEventListener('keydown', function(e){
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('modalDeficiencias').classList.contains('open')) { fecharDeficiencias(); return; }
+  fecharSobre();
+});
 
 popularFiltroRegiao();
 carregar();
