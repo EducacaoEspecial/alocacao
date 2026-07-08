@@ -128,7 +128,7 @@ input.cell-num{width:56px;text-align:center;}
 
 @media print{
   @page{size:A4 landscape;margin:12mm;}
-  header,.toolbar,.col-acoes,.btn-sobre,#cardDados,.legenda,.toast{display:none !important;}
+  header,.toolbar,.col-acoes,.btn-sobre,#cardDados,#cardRealocacao,.legenda,.toast{display:none !important;}
   body{background:#fff;font-size:11px;}
   .main{padding:0;max-width:100%;}
   .card{box-shadow:none;border:1px solid #ccc;padding:10px 12px;}
@@ -150,7 +150,7 @@ input.cell-num{width:56px;text-align:center;}
       <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
     </div>
     <div class="header-titles">
-      <h1>Painel de Alocação <span style="font-size:10px;font-weight:400;opacity:.6">· build 08-07-2026_08:11</span></h1>
+      <h1>Painel de Alocação <span style="font-size:10px;font-weight:400;opacity:.6">· build 08-07-2026_10:48</span></h1>
       <p>Gerência de Educação Especial — GEE / SEDUCT</p>
     </div>
     <button class="btn-sobre" onclick="abrirSobre()">
@@ -230,6 +230,41 @@ input.cell-num{width:56px;text-align:center;}
       <span><span class="badge badge-falta">Falta</span> Atual &lt; Meta (vaga em aberto)</span>
       <span><span class="badge badge-excesso">Excesso</span> Atual &gt; Meta (desbalanceamento)</span>
       <span><span class="badge badge-zero">—</span> Meta não definida</span>
+    </div>
+  </div>
+
+  <div class="card" id="cardRealocacao">
+    <div class="card-head">
+      <div class="card-icon"><svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+      <div style="flex:1">
+        <div class="card-title-text">Sugestão de realocação</div>
+        <div class="card-subtitle">Redistribui mediadores/cuidadores de escolas com excesso para escolas com falta, sempre dentro da mesma região</div>
+      </div>
+    </div>
+    <div class="toolbar" style="margin-bottom:12px">
+      <button class="btn btn-primary" onclick="calcularRealocacao()">
+        <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        Calcular sugestões
+      </button>
+      <button class="btn btn-danger btn-sm" onclick="aplicarTodasMovimentos()">Aplicar todas</button>
+    </div>
+    <div id="resumoRealocacao" style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px"></div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:74px">Região</th>
+            <th style="width:90px">Tipo</th>
+            <th>De (excesso)</th>
+            <th style="width:24px"></th>
+            <th>Para (falta)</th>
+            <th style="width:60px">Qtd.</th>
+            <th class="col-acoes"></th>
+          </tr>
+        </thead>
+        <tbody id="corpoRealocacao"></tbody>
+      </table>
+      <div class="empty-state" id="estadoVazioRealocacao">Clique em "Calcular sugestões" para ver as movimentações recomendadas com base nos dados atuais.</div>
     </div>
   </div>
 
@@ -319,6 +354,7 @@ var seq = 1;
 // é editável na tela e fica salvo no navegador junto com o resto dos dados).
 var metaTotalMed = 425;
 var metaTotalCui = 258;
+var sugestoesRealocacao = [];
 
 // Lista de escolas conhecidas (aparece na lista suspensa do campo "Escola").
 // Pode ser editada à vontade aqui embaixo, e também é atualizada automaticamente
@@ -892,6 +928,125 @@ function renderStats() {
     '<div class="stat warn"><div class="stat-label">Escolas com excesso</div><div class="stat-value">' + excessoCount + '</div></div>' +
     '<div class="stat success"><div class="stat-label">Mediadores alocados</div><div class="stat-value">' + totalMedAtual + ' <span style="font-size:13px;color:var(--text-hint);font-weight:600;">/ ' + metaTotalMed + '</span><button class="btn-icon-sm meta-edit" title="Editar total contratado de mediadores" onclick="editarMetaTotal(\'med\')"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button></div></div>' +
     '<div class="stat success"><div class="stat-label">Cuidadores alocados</div><div class="stat-value">' + totalCuiAtual + ' <span style="font-size:13px;color:var(--text-hint);font-weight:600;">/ ' + metaTotalCui + '</span><button class="btn-icon-sm meta-edit" title="Editar total contratado de cuidadores" onclick="editarMetaTotal(\'cui\')"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button></div></div>';
+}
+
+// ---- Sugestão de realocação ----
+// Casa escolas com excesso (doadoras) com escolas em falta (receptoras) da
+// MESMA região, mediadores e cuidadores calculados separadamente. Não mexe
+// nos dados de verdade até o usuário clicar em "Aplicar" — só monta a lista
+// de sugestões a partir do estado atual de `escolas`.
+function calcularRealocacao() {
+  var movimentos = [];
+  REGIOES.forEach(function(regiao) {
+    var doMesmaRegiao = escolas.filter(function(e) { return String(e.regiao) === String(regiao); });
+    movimentos = movimentos.concat(calcularMovimentosTipo(doMesmaRegiao, 'med', regiao));
+    movimentos = movimentos.concat(calcularMovimentosTipo(doMesmaRegiao, 'cui', regiao));
+  });
+  sugestoesRealocacao = movimentos;
+  renderRealocacao();
+  if (!movimentos.length) toast('Nenhuma realocação possível: não há pares de excesso/falta na mesma região.');
+  else toast(movimentos.length + ' movimentação(ões) sugerida(s).');
+}
+
+function calcularMovimentosTipo(listaRegiao, tipo, regiao) {
+  var campoMeta = (tipo === 'med') ? 'metaMed' : 'metaCui';
+  var campoAtual = (tipo === 'med') ? 'atualMed' : 'atualCui';
+
+  function metaDefinida(e) {
+    return e[campoMeta] !== '' && e[campoMeta] !== null && !isNaN(e[campoMeta]);
+  }
+
+  var doadoras = listaRegiao.filter(function(e) { return metaDefinida(e) && e[campoAtual] > e[campoMeta]; })
+    .map(function(e) { return { id: e.id, nome: e.nome, sobra: e[campoAtual] - e[campoMeta] }; })
+    .sort(function(a, b) { return b.sobra - a.sobra; });
+
+  var receptoras = listaRegiao.filter(function(e) { return metaDefinida(e) && e[campoAtual] < e[campoMeta]; })
+    .map(function(e) { return { id: e.id, nome: e.nome, falta: e[campoMeta] - e[campoAtual] }; })
+    .sort(function(a, b) { return b.falta - a.falta; });
+
+  var movimentos = [];
+  var i = 0, j = 0;
+  while (i < doadoras.length && j < receptoras.length) {
+    var d = doadoras[i], r = receptoras[j];
+    var qtd = Math.min(d.sobra, r.falta);
+    if (qtd > 0) {
+      movimentos.push({ regiao: regiao, tipo: tipo, origemId: d.id, origemNome: d.nome, destinoId: r.id, destinoNome: r.nome, quantidade: qtd });
+      d.sobra -= qtd;
+      r.falta -= qtd;
+    }
+    if (d.sobra <= 0) i++;
+    if (r.falta <= 0) j++;
+  }
+  return movimentos;
+}
+
+function renderRealocacao() {
+  var corpo = document.getElementById('corpoRealocacao');
+  var vazio = document.getElementById('estadoVazioRealocacao');
+  var resumo = document.getElementById('resumoRealocacao');
+
+  if (!sugestoesRealocacao.length) {
+    corpo.innerHTML = '';
+    vazio.style.display = 'block';
+    resumo.textContent = '';
+    return;
+  }
+  vazio.style.display = 'none';
+  var totalQtd = sugestoesRealocacao.reduce(function(s, m) { return s + m.quantidade; }, 0);
+  resumo.textContent = sugestoesRealocacao.length + ' movimentação(ões) sugerida(s) — ' + totalQtd + ' vaga(s) em aberto fechada(s) sem contratar ninguém a mais.';
+
+  corpo.innerHTML = sugestoesRealocacao.map(function(m, idx) {
+    var rotulo = (m.tipo === 'med') ? 'Mediador' : 'Cuidador';
+    return '<tr>' +
+      '<td>Região ' + m.regiao + '</td>' +
+      '<td><span class="badge badge-zero">' + rotulo + '</span></td>' +
+      '<td>' + escAttr(m.origemNome || '(sem nome)') + '</td>' +
+      '<td style="text-align:center;color:var(--text-hint)">&#8594;</td>' +
+      '<td>' + escAttr(m.destinoNome || '(sem nome)') + '</td>' +
+      '<td style="text-align:center;font-weight:700">' + m.quantidade + '</td>' +
+      '<td class="col-acoes"><button class="btn btn-sm btn-primary" onclick="aplicarMovimento(' + idx + ')">Aplicar</button></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function aplicarMovimento(idx) {
+  var m = sugestoesRealocacao[idx];
+  if (!m) return;
+  var origem = escolas.find(function(e) { return e.id === m.origemId; });
+  var destino = escolas.find(function(e) { return e.id === m.destinoId; });
+  if (!origem || !destino) {
+    toast('Escola não encontrada (pode ter sido removida ou editada). Recalcule as sugestões.');
+    sugestoesRealocacao.splice(idx, 1);
+    renderRealocacao();
+    return;
+  }
+  var campoAtual = (m.tipo === 'med') ? 'atualMed' : 'atualCui';
+  origem[campoAtual] = Math.max(0, (origem[campoAtual] || 0) - m.quantidade);
+  destino[campoAtual] = (destino[campoAtual] || 0) + m.quantidade;
+  salvar();
+  sugestoesRealocacao.splice(idx, 1);
+  render();
+  renderRealocacao();
+  toast('Movido: ' + m.quantidade + ' ' + (m.tipo === 'med' ? 'mediador(es)' : 'cuidador(es)') + ' de "' + origem.nome + '" para "' + destino.nome + '".');
+}
+
+function aplicarTodasMovimentos() {
+  if (!sugestoesRealocacao.length) { toast('Calcule as sugestões primeiro.'); return; }
+  if (!confirm('Aplicar as ' + sugestoesRealocacao.length + ' movimentações sugeridas? Isso vai atualizar os números "Atual" das escolas envolvidas.')) return;
+  var copia = sugestoesRealocacao.slice();
+  copia.forEach(function(m) {
+    var origem = escolas.find(function(e) { return e.id === m.origemId; });
+    var destino = escolas.find(function(e) { return e.id === m.destinoId; });
+    if (!origem || !destino) return;
+    var campoAtual = (m.tipo === 'med') ? 'atualMed' : 'atualCui';
+    origem[campoAtual] = Math.max(0, (origem[campoAtual] || 0) - m.quantidade);
+    destino[campoAtual] = (destino[campoAtual] || 0) + m.quantidade;
+  });
+  salvar();
+  sugestoesRealocacao = [];
+  render();
+  renderRealocacao();
+  toast('Todas as movimentações foram aplicadas.');
 }
 
 function editarMetaTotal(tipo) {
